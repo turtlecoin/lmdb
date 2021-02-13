@@ -46,6 +46,7 @@ set(LMDB_SRC
 )
 
 add_library(lmdb STATIC ${LMDB_SRC})
+target_include_directories(lmdb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(WIN32)
     target_link_libraries(lmdb ws2_32)
