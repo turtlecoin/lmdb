@@ -37,7 +37,7 @@ if(MSVC)
 endif()
 
 if(NOT MSVC)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O3 -Wno-return-local-addr")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O3 -Wno-return-local-addr -Wuninitialized")
 endif()
 
 set(LMDB_SRC

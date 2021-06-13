@@ -9582,7 +9582,7 @@ int ESECT
 mdb_env_copy2(MDB_env *env, const char *path, unsigned int flags)
 {
 	int rc;
-	MDB_name fname;
+	MDB_name fname = {0};
 	HANDLE newfd = INVALID_HANDLE_VALUE;
 
 	rc = mdb_fname_init(path, env->me_flags | MDB_NOLOCK, &fname);
