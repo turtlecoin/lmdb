@@ -6,6 +6,17 @@ if(CCACHE_PROGRAM)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
 endif()
 
+if(DEFINED CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "Choose the type of build, options are: Debug, Release, RelWithDebInfo")
+else()
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: Debug, Release, RelWithDebInfo")
+endif()
+
+set(CMAKE_CONFIGURATION_TYPES Debug RelWithDebInfo Release CACHE STRING INTERNAL)
+set(ARCH native CACHE STRING "CPU to build for: -march value or native")
+
+message(STATUS "Building for target architecture: ${ARCH}")
+
 set(LIB_MAJOR_VERSION "0")
 set(LIB_MINOR_VERSION "9")
 set(LIB_PATCH_VERSION "28")
@@ -33,11 +44,58 @@ set(STATIC ON CACHE BOOL FORCE "Link libraries statically? Forced to ON")
 add_definitions(-DSTATICLIB)
 
 if(MSVC)
-    add_definitions("/EHsc /DWIN32_LEAN_AND_MEAN /O2 /wd4267 /wd4996 /wd4244 /wd4333 /wd4146 /wd4172")
-endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN /O2 /wd4267 /wd4996 /wd4244 /wd4333 /wd4146 /wd4172")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std:c++17 /wd4267 /wd4804 /wd4996 /D_DLL /D_CRT_SECURE_NO_WARNINGS")
 
-if(NOT MSVC)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O3 -Wno-return-local-addr -Wuninitialized")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /O2")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2")
+else()
+    if("${ARCH}" STREQUAL "default")
+        set(ARCH_FLAG "")
+    else()
+        set(ARCH_FLAG "-march=${ARCH}")
+    endif()
+
+    if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64" OR "${LABEL}" STREQUAL "aarch64")
+        set(MAES_FLAG "")
+        set(CRYPTOPP_AARCH64 ON CACHE BOOL FORCE "Tell CryptoPP that we are building for aarch64")
+    elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64" AND NOT "${LABEL}" STREQUAL "aarch64")
+        set(MAES_FLAG "-maes")
+    else ()
+        set(MAES_FLAG "")
+    endif ()
+
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wuninitialized ${MAES_FLAG}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wuninitialized ${MAES_FLAG}")
+
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g3 -Og")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -Og")
+
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -DNDEBUG -O3")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG -O3")
+
+    if(APPLE)
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            # Need to build against libc++ instead of libstc++ on apple
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -I/usr/local/opt/llvm/include/c++/v1 -nodefaultlibs -lc++ -lc++abi -lm -lc -lgcc -lgcc_eh")
+
+            # Need these flags so gcc OSX works on the cryptopp ASM - https://groups.google.com/forum/#!topic/cryptopp-users/po8yO-vYaac
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCRYPTOPP_CLANG_INTEGRATED_ASSEMBLER=1")
+
+        elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            # Need to link against the llvm libc++ library, default is too old for std::filesystem
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -I/usr/local/opt/llvm/include/c++/v1")
+        endif()
+    endif()
+
+    if(MINGW OR STATIC_LIBC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static -static-libstdc++")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+    endif()
+
+    if(NOT APPLE)
+        set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+    endif()
 endif()
 
 set(LMDB_SRC
@@ -54,12 +112,3 @@ endif()
 
 set_property(TARGET lmdb PROPERTY C_STANDARD 90)
 set_property(TARGET lmdb PROPERTY SOVERSION 1)
-
-foreach(flag_var
-        CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
-        CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
-        CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
-        CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
-    string(REGEX REPLACE "/RTC[^ ]*" "" ${flag_var} "${${flag_var}}")
-    string(REGEX REPLACE "/Od" "" ${flag_var} "${${flag_var}}")
-endforeach(flag_var)
